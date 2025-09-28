@@ -10,6 +10,33 @@ const otpStore = new Map();
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "changeme";
 
+// Test email endpoint
+router.post("/test-email", async (req, res) => {
+  console.log("Test email route hit");
+  const { email } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+  
+  try {
+    const testOtp = "123456";
+    await sendOtpEmail(email, testOtp);
+    res.json({ 
+      status: "Email sent successfully", 
+      email: email,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Test email failed:", error);
+    res.status(500).json({ 
+      error: "Email sending failed", 
+      details: error.message,
+      code: error.code
+    });
+  }
+});
+
 router.post("/login", decryptBody, async (req, res) => {
   console.log("Login route hit");
   
