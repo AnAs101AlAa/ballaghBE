@@ -1,42 +1,27 @@
-const nodemailer = require("nodemailer");
+const SibApiV3Sdk = require("sib-api-v3-sdk");
 
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",  // Brevo SMTP server
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.BREVO_USER,   // usually your Brevo account email
-    pass: process.env.BREVO_PASS    // the SMTP key you generate
-  }
-});
+let defaultClient = SibApiV3Sdk.ApiClient.instance;
+let apiKey = defaultClient.authentications["api-key"];
+apiKey.apiKey = process.env.BREVO_API_KEY; // generate in dashboard
+
+const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
 async function sendOtpEmail(to, otp) {
-  const mailOptions = {
-    from: `"Ballagh App" <${process.env.BREVO_USER}>`,
-    to,
+  const sendSmtpEmail = {
+    sender: { email: "you@verified.com", name: "Ballagh App" },
+    to: [{ email: to }],
     subject: "رمز التحقق لموقعك - Verification Code",
-    text: `رمز التحقق الخاص بك هو: ${otp}\n\nYour verification code is: ${otp}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; padding: 20px;">
-        <h2>رمز التحقق - Verification Code</h2>
-        <p>رمز التحقق الخاص بك هو:</p>
-        <p>Your verification code is:</p>
-        <h1 style="color: #007bff; font-size: 32px; margin: 20px 0;">${otp}</h1>
-        <p>هذا الرمز صالح لمدة دقيقتين فقط.</p>
-        <p>This code is valid for 2 minutes only.</p>
-      </div>
-    `
-    };
+    htmlContent: `<h1>${otp}</h1><p>صالح لمدة دقيقتين فقط.</p>`
+  };
 
   try {
-    const result = await transporter.sendMail(mailOptions);
-    console.log("Email sent:", result.messageId);
-    return result;
+    const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
+    console.log("Email sent:", data.messageId || data);
+    return data;
   } catch (err) {
-    console.error("Failed to send email:", err);
+    console.error("Brevo API error:", err);
     throw err;
   }
 }
 
 module.exports = { sendOtpEmail };
-
