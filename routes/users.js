@@ -62,8 +62,8 @@ router.post("/verify-otp", decryptBody, async (req, res) => {
 
   res.cookie("token", token, {
     httpOnly: true,
-    secure: false,//process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     maxAge: 3600000, // 1 hour
   });
 
