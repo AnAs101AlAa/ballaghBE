@@ -1,0 +1,15 @@
+### Test Email Endpoint Locally
+POST http://localhost:3000/api/test-email
+Content-Type: application/json
+
+{
+  "email": "anas.ibrahim03@eng-st.cu.edu.eg"
+}
+
+### Test Email Endpoint on Railway (replace with your actual Railway URL)
+POST https://your-app-name.up.railway.app/api/test-email
+Content-Type: application/json
+
+{
+  "email": "your-email@gmail.com"
+}
