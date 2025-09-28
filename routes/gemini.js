@@ -151,8 +151,6 @@ Off-topic handling:
       glResp.data.candidates?.[0]?.content?.parts?.[0]?.text ||
       "لم يتم استلام رد من المساعد";
 
-    console.log("Gemini response:", answer);
-
     // 6) Append model reply
     history.push({ role: "model", parts: [{ text: answer }] });
 
@@ -200,8 +198,6 @@ Off-topic handling:
         createdAt: now,
         updatedAt: now,
       };
-
-      console.log("Storing report:", reportData);
       
       await pool.query(
         `INSERT INTO reports (id, title, category, location, date, description, createdat, updatedat, evidence_url, status)

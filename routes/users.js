@@ -10,60 +10,52 @@ const otpStore = new Map();
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "changeme";
 
-router.post("/login", decryptBody, async (req, res) => {
-  console.log("Login route hit");
-  
+router.post("/login", decryptBody, async (req, res) => {  
   try {
     // Check if decryption worked
     if (!req.decrypted) {
-      console.log("No decrypted data found");
+      console.error("No decrypted data found");
       return res.status(400).json({ error: "Decryption failed" });
     }
     
     const { username, password } = req.decrypted;
-    console.log("Login attempt for username:", username);
 
     if (!username || !password) {
-      console.log("Missing username or password");
+      console.error("Missing username or password");
       return res.status(400).json({ error: "Username and password required" });
     }
 
-    console.log("Querying database for user...");
     const result = await pool.query(
       "SELECT password FROM users WHERE username = $1",
       [username]
     );
 
     if (result.rows.length === 0) {
-      console.log("User not found:", username);
+      console.error("User not found:", username);
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    console.log("Comparing passwords...");
     const valid = await bcrypt.compare(password, result.rows[0].password);
 
     if (!valid) {
-      console.log("Invalid password for user:", username);
+      console.error("Invalid password for user:", username);
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    console.log("Password valid, generating OTP...");
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     otpStore.set(username, { otp, expires: Date.now() + 2 * 60 * 1000 });
 
-    console.log("Getting user email...");
     const emailResult = await pool.query(
       "SELECT email FROM users WHERE username = $1",
       [username]
     );
     
     if (emailResult.rows.length === 0) {
-      console.log("No email found for user:", username);
+      console.error("No email found for user:", username);
       return res.status(401).json({ error: "No email found for user" });
     }
 
     const userEmail = emailResult.rows[0].email;
-    console.log("Sending OTP email to:", userEmail);
     
     // Add timeout to email sending
     const emailPromise = sendOtpEmail(userEmail, otp);
@@ -73,7 +65,6 @@ router.post("/login", decryptBody, async (req, res) => {
     
     try {
       await Promise.race([emailPromise, timeoutPromise]);
-      console.log("OTP email sent successfully");
       res.json({ status: "otp_sent" });
     } catch (emailError) {
       console.error("Email sending failed:", emailError);

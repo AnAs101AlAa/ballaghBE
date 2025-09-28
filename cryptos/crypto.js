@@ -12,11 +12,8 @@ async function initKeys() {
       publicKey: fromB64(process.env.SERVER_X25519_PUB),
       privateKey: fromB64(process.env.SERVER_X25519_PRIV),
     };
-    console.log("Loaded server keypair from env.");
   } else {
     serverKeyPair = sodium.crypto_kx_keypair();
-    console.log("Generated new server keypair.");
-    console.log("Server public key (base64):", b64(serverKeyPair.publicKey));
   }
 }
 
