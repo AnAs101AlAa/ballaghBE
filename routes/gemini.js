@@ -1,27 +1,31 @@
 const express = require("express");
 const axios = require("axios");
+const crypto = require("crypto");
 const { sodium, b64, getServerKeyPair } = require("../cryptos/crypto");
 const pool = require("../db");
 const conversations = require("../conversations");
 const chrono = require("chrono-node");
 const decryptBody = require("../cryptos/decryptBody");
 const encryptForClient = require("../cryptos/encryptBody");
+const cloudinary = require("../cloudinary"); // <-- Cloudinary config wrapper
 
 const router = express.Router();
 
 router.post("/gemini", decryptBody, async (req, res) => {
   try {
     const payload = req.decrypted;
-    const { prompt, files, sessionId } = payload;
-    
-    const { ephemeral_pub } = payload;
+    const { prompt, files, sessionId, ephemeral_pub } = payload;
+
     if (!ephemeral_pub) {
       return res.status(400).json({ error: "Missing ephemeral_pub" });
     }
 
     const serverKeyPair = require("../cryptos/crypto").getServerKeyPair();
+    const clientPub = sodium.from_base64(
+      ephemeral_pub,
+      sodium.base64_variants.ORIGINAL
+    );
 
-    const clientPub = sodium.from_base64(ephemeral_pub, sodium.base64_variants.ORIGINAL);
     const sessionKeys = sodium.crypto_kx_server_session_keys(
       serverKeyPair.publicKey,
       serverKeyPair.privateKey,
@@ -116,8 +120,7 @@ Strict JSON enforcement rules:
 10. The JSON must be self-contained — no placeholders, no instructions, no notes. 
 
 Off-topic handling:
-- If the user goes off-topic (not about filing a police report), politely refuse to continue."
-`
+- If the user goes off-topic (not about filing a police report), politely refuse to continue."`
             },
           ],
         },
@@ -156,15 +159,12 @@ Off-topic handling:
 
     // 7) Detect report completion
     if (answer.includes("<REPORT_READY>")) {
-
       let reportObj = null;
       const match = answer.match(/<REPORT_JSON>([\s\S]*?)<\/REPORT_JSON>/);
       if (match) {
-        // Clean out any code fences or backticks from inside the tags
         let jsonStr = match[1].replace(/```json|```/g, "").trim();
         reportObj = JSON.parse(jsonStr);
       } else {
-        // Fallback: try to extract JSON from anywhere in the answer
         let answerClean = answer
           .replace(/```json|```/g, "")
           .replace(/<REPORT_JSON>/g, "")
@@ -181,8 +181,35 @@ Off-topic handling:
         }
       }
 
+      // Upload media to Cloudinary (parallel with Promise.all)
+      let uploadedMedia = [];
+      if (reportObj?.media?.length > 0) {
+        try {
+          uploadedMedia = await Promise.all(
+            reportObj.media.map(async (file) => {
+              try {
+                const uploadResp = await cloudinary.uploader.upload(file, {
+                  folder: "reports",
+                  resource_type: "auto",
+                });
+                return uploadResp.secure_url;
+              } catch (err) {
+                console.error("Cloudinary upload failed:", err.message);
+                return null; // skip failed uploads
+              }
+            })
+          );
+          // filter out failed ones
+          uploadedMedia = uploadedMedia.filter((url) => url !== null);
+        } catch (err) {
+          console.error("Media upload batch failed:", err.message);
+        }
+      }
+
       // Use parseSmartDate for the report date, fallback to now
-      const safeDate = chrono.parseDate(reportObj.date)?.toISOString() || new Date().toISOString();
+      const safeDate =
+        chrono.parseDate(reportObj.date)?.toISOString() ||
+        new Date().toISOString();
 
       const now = new Date().toISOString();
 
@@ -193,15 +220,15 @@ Off-topic handling:
         address: reportObj.address || "غير محدد",
         date: safeDate,
         description: reportObj.description || "",
-        media: reportObj.media || [],
+        media: uploadedMedia,
         status: "pending",
         createdAt: now,
         updatedAt: now,
       };
-      
+
       await pool.query(
         `INSERT INTO reports (id, title, category, location, date, description, createdat, updatedat, evidence_url, status)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
         [
           reportData.id,
           reportData.title,
@@ -217,12 +244,9 @@ Off-topic handling:
       );
 
       conversations.delete(sessionId);
-    } else {
     }
 
-    return res.json(
-      encryptForClient({ answer: answer }, sessionKeys, sodium)
-    );    
+    return res.json(encryptForClient({ answer }, sessionKeys, sodium));
   } catch (err) {
     console.error(
       "Error in /api/gemini:",
@@ -235,3 +259,4 @@ Off-topic handling:
 });
 
 module.exports = router;
+

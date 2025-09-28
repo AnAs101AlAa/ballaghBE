@@ -1,34 +1,70 @@
 const express = require("express");
-const { sodium, serverKeyPair } = require("../cryptos/crypto");
+const { sodium } = require("../cryptos/crypto");
 const pool = require("../db");
-const { loadMediaStore, saveMediaStore } = require("../mediaStore");
 const crypto = require("crypto");
 const decryptBody = require("../cryptos/decryptBody");
 const encryptForClient = require("../cryptos/encryptBody");
+const cloudinary = require('cloudinary').v2;
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 const router = express.Router();
+
+// Helper function to delete media from Cloudinary
+async function deleteCloudinaryMedia(publicIds) {
+  try {
+    if (!publicIds || publicIds.length === 0) return;
+    
+    const deletePromises = publicIds.map(publicId => 
+      cloudinary.uploader.destroy(publicId)
+    );
+    
+    const results = await Promise.all(deletePromises);
+    console.log('Cloudinary deletion results:', results);
+    return results;
+  } catch (error) {
+    console.error('Error deleting media from Cloudinary:', error);
+    throw error;
+  }
+}
 
 router.post("/submit-report", decryptBody, async (req, res) => {
   try {
     const decryptedReport = req.decrypted;
-
     const report = decryptedReport.report || decryptedReport;
 
-    // Store media in a backend file
-    let mediaRefs = [];
+    // Upload media to Cloudinary
+    let mediaEntries = [];
     if (report.media && Array.isArray(report.media) && report.media.length > 0) {
-      let mediaStore = loadMediaStore();
-      report.media.forEach((file) => {
-        const mediaId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        mediaStore.push({
-          id: mediaId,
-          data: file.data, // base64 string
-          mime: file.mime,
-          uploadedAt: new Date().toISOString(),
-        });
-        mediaRefs.push(mediaId);
-      });
-      saveMediaStore(mediaStore);
+      for (const file of report.media) {
+        try {
+          const uploadResult = await cloudinary.uploader.upload(
+            `data:${file.mime};base64,${file.data}`,
+            {
+              folder: "ballagh-reports",
+              resource_type: "auto",
+              public_id: `report_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+              quality: "auto",
+              fetch_format: "auto"
+            }
+          );
+
+          // Push both id + url
+          mediaEntries.push({
+            public_id: uploadResult.public_id,
+            url: uploadResult.secure_url
+          });
+
+        } catch (uploadError) {
+          console.error("Cloudinary upload error:", uploadError);
+          // Continue uploading other files
+        }
+      }
     }
 
     // Prepare report object for DB
@@ -41,8 +77,8 @@ router.post("/submit-report", decryptBody, async (req, res) => {
       description: report.description || "",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      evidence_url: mediaRefs, // store media IDs
-      status: "pending",
+      evidence_url: mediaEntries,
+      status: "pending"
     };
 
     await pool.query(
@@ -57,17 +93,23 @@ router.post("/submit-report", decryptBody, async (req, res) => {
         reportDate.description,
         reportDate.createdAt,
         reportDate.updatedAt,
-        JSON.stringify(reportDate.evidence_url),
-        reportDate.status,
+        JSON.stringify(reportDate.evidence_url), // JSONB column
+        reportDate.status
       ]
     );
 
-    return res.json({ status: "ok" });
+    return res.json({
+      status: "ok",
+      reportId: reportDate.id,
+      mediaUploaded: mediaEntries.length,
+      media: mediaEntries
+    });
   } catch (err) {
     console.error("Error in /api/submit-report:", err.message || err);
     return res.status(500).json({ error: "Server error: " + (err.message || "unknown") });
   }
 });
+
 
 router.post("/reports", decryptBody, async (req, res) => {
   try {

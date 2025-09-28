@@ -15,6 +15,7 @@
     "axios": "^1.12.1",
     "bcryptjs": "^3.0.2",
     "chrono-node": "^2.9.0",
+    "cloudinary": "^2.7.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
