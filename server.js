@@ -22,7 +22,7 @@ const corsOptions = {
       process.env.FRONTEND_ORIGIN,
       'http://localhost:5173',
       'http://localhost:3000',
-      'https://ballagh.vercel.app'
+      'https://ballagh.netlify.app'
     ].filter(Boolean);
     
     if (allowedOrigins.indexOf(origin) !== -1) {
